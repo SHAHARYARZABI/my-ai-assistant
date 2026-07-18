@@ -4,3 +4,5 @@ python-dotenv
 python-pptx
 PyPDF2
 python-docx
+ffmpeg-python
+gunicorn
