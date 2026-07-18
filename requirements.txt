@@ -1,0 +1,6 @@
+flask
+openai
+python-dotenv
+python-pptx
+PyPDF2
+python-docx
