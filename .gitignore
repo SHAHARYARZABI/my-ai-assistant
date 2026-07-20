@@ -2,3 +2,4 @@
 venv/
 chats/
 __pycache__/
+generated_files/
