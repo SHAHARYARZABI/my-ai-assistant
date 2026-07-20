@@ -6,3 +6,6 @@ PyPDF2
 python-docx
 ffmpeg-python
 gunicorn
+python-pptx
+python-docx
+reportlab

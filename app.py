@@ -7,6 +7,14 @@ from pptx import Presentation
 from PyPDF2 import PdfReader
 from docx import Document
 import base64
+from flask import send_from_directory
+from pptx import Presentation
+from docx import Document
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
+import re
+import json as pyjson
 
 load_dotenv()
 print("MY KEY IS:", os.getenv("GROK_API_KEY"))
@@ -156,6 +164,100 @@ def upload_file():
         "is_image": is_image,
         "image_data_url": image_data_url
     })
+    
+GENERATED_DIR = "generated_files"
+os.makedirs(GENERATED_DIR, exist_ok=True)
+
+
+@app.route("/api/generate_file", methods=["POST"])
+def generate_file():
+    data = request.json
+    topic = data.get("topic", "")
+    file_type = data.get("file_type", "pptx")
+
+    prompt = f"""Create content for a short presentation/document about: {topic}
+Return ONLY valid JSON, no extra text, no markdown formatting, in exactly this format:
+{{
+  "title": "Main Title Here",
+  "sections": [
+    {{"heading": "Section heading", "bullets": ["point 1", "point 2", "point 3"]}}
+  ]
+}}
+Include 5 to 7 sections."""
+
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=2000,
+        )
+        raw = response.choices[0].message.content.strip()
+
+        if raw.startswith("```"):
+            raw = raw.strip("`")
+            if raw.lower().startswith("json"):
+                raw = raw[4:]
+
+        match = re.search(r"\{.*\}", raw, re.DOTALL)
+        content = pyjson.loads(match.group(0)) if match else pyjson.loads(raw)
+
+    except Exception as e:
+        return jsonify({"error": f"Could not generate content: {str(e)}"}), 500
+
+    filename = f"{uuid.uuid4()}.{file_type}"
+    filepath = os.path.join(GENERATED_DIR, filename)
+
+    try:
+        if file_type == "pptx":
+            prs = Presentation()
+            title_slide = prs.slides.add_slide(prs.slide_layouts[0])
+            title_slide.shapes.title.text = content["title"]
+
+            for sec in content["sections"]:
+                slide = prs.slides.add_slide(prs.slide_layouts[1])
+                slide.shapes.title.text = sec["heading"]
+                body = slide.placeholders[1].text_frame
+                for i, bullet in enumerate(sec["bullets"]):
+                    if i == 0:
+                        body.text = bullet
+                    else:
+                        p = body.add_paragraph()
+                        p.text = bullet
+            prs.save(filepath)
+
+        elif file_type == "docx":
+            doc = Document()
+            doc.add_heading(content["title"], level=0)
+            for sec in content["sections"]:
+                doc.add_heading(sec["heading"], level=1)
+                for bullet in sec["bullets"]:
+                    doc.add_paragraph(bullet, style="List Bullet")
+            doc.save(filepath)
+
+        elif file_type == "pdf":
+            doc = SimpleDocTemplate(filepath, pagesize=letter)
+            styles = getSampleStyleSheet()
+            story = [Paragraph(content["title"], styles["Title"]), Spacer(1, 20)]
+            for sec in content["sections"]:
+                story.append(Paragraph(sec["heading"], styles["Heading2"]))
+                for bullet in sec["bullets"]:
+                    story.append(Paragraph("• " + bullet, styles["Normal"]))
+                story.append(Spacer(1, 12))
+            doc.build(story)
+
+        else:
+            return jsonify({"error": "Unsupported file type"}), 400
+
+    except Exception as e:
+        return jsonify({"error": f"Could not build file: {str(e)}"}), 500
+
+    return jsonify({"download_url": f"/files/{filename}", "filename": filename})
+
+
+@app.route("/files/<filename>")
+def download_generated_file(filename):
+    return send_from_directory(GENERATED_DIR, filename, as_attachment=True)
+
 
 def load_history(chat_id):
     path = f"{CHATS_DIR}/{chat_id}.json"

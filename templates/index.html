@@ -491,6 +491,9 @@
           <button onclick="clearFile()">✕</button>
         </div>
         <div class="composer-box">
+          <button class="icon-btn" onclick="generateFile('pptx')" title="Generate PowerPoint">📊</button>
+           <button class="icon-btn" onclick="generateFile('pdf')" title="Generate PDF">📄</button>
+            <button class="icon-btn" onclick="generateFile('docx')" title="Generate Word Doc">📝</button>
           <button class="icon-btn" onclick="document.getElementById('file-input').click()" title="Attach file">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a5 5 0 01-7.07-7.07l9.19-9.19a3.5 3.5 0 015 5l-9.2 9.19a1.5 1.5 0 01-2.12-2.12l8.49-8.48"/></svg>
           </button>
@@ -597,6 +600,51 @@ function clearFile(){
   attachedName = null;
   document.getElementById("file-input").value = "";
   document.getElementById("file-preview").style.display = "none";
+}
+
+async function generateFile(type){
+  const input = document.getElementById("user-input");
+  const topic = input.value.trim();
+  if (!topic){
+    alert("Type a topic first, e.g. 'What is AI', then click the file icon.");
+    return;
+  }
+
+  document.getElementById("empty-state").style.display = "none";
+  renderMessage("user", `Generate a ${type.toUpperCase()} about: ${topic}`);
+  input.value = "";
+  scrollToBottom();
+  showTyping();
+
+  try{
+    const res = await fetch("/api/generate_file", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topic, file_type: type })
+    });
+    const data = await res.json();
+    hideTyping();
+
+    if (data.error){
+      renderMessage("assistant", "Sorry, I couldn't generate that file: " + data.error);
+    } else {
+      const inner = document.getElementById("chat-inner");
+      const wrap = document.createElement("div");
+      wrap.className = "msg bot";
+      wrap.innerHTML = `
+        <div class="msg-avatar">AI</div>
+        <div class="msg-body">
+          <div class="msg-role">{{ assistant_name }}</div>
+          <div class="msg-text">Your ${type.toUpperCase()} file is ready.</div>
+          <a href="${data.download_url}" style="color:#f5b942; display:inline-block; margin-top:8px;" download>⬇️ Download ${data.filename}</a>
+        </div>`;
+      inner.appendChild(wrap);
+    }
+  } catch(err){
+    hideTyping();
+    renderMessage("assistant", "Something went wrong generating the file.");
+  }
+  scrollToBottom();
 }
 
 async function sendMessage(){
